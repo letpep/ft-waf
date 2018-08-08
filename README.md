@@ -41,7 +41,7 @@ nginx: the configuration file /usr/local/openresty-1.11.2.5/nginx/conf/nginx.con
 nginx: configuration file /usr/local/openresty-1.11.2.5/nginx/conf/nginx.conf test is successful
 # /usr/local/openresty/nginx/sbin/nginx
 # curl http://x.x.x.x/
-HelloWorld
+
 </pre>
 ###redis 部署
 <pre>
