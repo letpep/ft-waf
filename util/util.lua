@@ -9,8 +9,7 @@ local io = require("io")
 local cjson = require("cjson.safe")
 local string = require("string")
 local config = require("config")
-local httpRds = require("httpRdsutil")
-local logutil = require("logutil")
+local redisop = require("redisOP")
 local _M = {
     version = "0.1",
     RULE_TABLE = {},
@@ -41,9 +40,8 @@ function _M.get_rule_files(rules_path)
 end
 -- if key exists
 function _M.rdskeyexists(key)
-    local reqbody =  'key='..key..'&start='..'0'..'&end='..'100'
-   local res ,err =  httpRds.zcount(reqbody)
-    if tonumber(res.body ) > 0 then
+   local res ,err =  redisop.zcount(key,0,100)
+    if tonumber(res) > 0 then
         return true
     else
         return false
@@ -59,21 +57,14 @@ function _M.rules_to_redis(rules_path)
     end
 
     for rule_name, rule_file in pairs(rule_files) do
-        local reqbody = 'key='..rule_name..'&start='..'0'..'&end='..'-1'
-        local res ,err = httpRds.zrevrange(reqbody)
-        local json_rules = res.body
-        local t_rule = {}
         local file_rule_name = io.open(rule_file)
         local json_rules = file_rule_name:read("*a")
         file_rule_name:close()
         local table_rules = cjson.decode(json_rules)
         if table_rules ~= nil then
---            ngx.log(ngx.INFO, string.format("%s:%s", table_rules, type(table_rules)))
             for _, table_rule in pairs(table_rules) do
                 local score = _M.cacheInc()
-                -- ngx.log(ngx.INFO, string.format("Insert table:%s, value:%s", t_rule, table_name["RuleItem"]))
-                local reqbody = 'key='..rule_name..'&value='..cjson.encode(table_rule)..'&score='..score
-                httpRds.zaddRedisValue(reqbody)
+                redisop.zadd(rule_name,score,cjson.encode(table_rule))
 
             end
         end
@@ -92,22 +83,16 @@ function _M.get_rules(rules_path)
     end
 
     for rule_name, rule_file in pairs(rule_files) do
-        local reqbody = 'key='..rule_name..'&start='..'0'..'&end='..'-1'
-        local res ,err = httpRds.zrevrange(reqbody)
+        local res ,err = redisop.zrevrange(rule_name,'0','-1')
         local json_rules = res.body
         local t_rule = {}
---        local file_rule_name = io.open(rule_file)
---        local json_rules = file_rule_name:read("*a")
---        file_rule_name:close()
         local table_rules = cjson.decode(json_rules)
         if table_rules ~= nil then
             for _, table_name in pairs(table_rules) do
-                -- ngx.log(ngx.INFO, string.format("Insert table:%s, value:%s", t_rule, table_name["RuleItem"]))
                 local table_name_data = cjson.decode(table_name)
                 table.insert(t_rule, table_name_data["RuleItem"])
             end
         end
---        ngx.log(ngx.INFO, string.format("rule_name:%s, value:%s", rule_name, t_rule))
         local limit = ngx.shared.limit
         local dataj = cjson.encode(t_rule)
         limit:set(rule_name,cjson.encode(t_rule))
@@ -147,19 +132,7 @@ function _M.get_server_host()
     return host
 end
 
--- Get all rule file name by lfs
---function _M.get_rule_files(rules_path)
---local lfs = require("lfs")
---    local rule_files = {}
---    for file in lfs.dir(rules_path) do
---        if file ~= "." and file ~= ".." then
---            local file_name = rules_path .. '/' .. file
---            ngx.log(ngx.DEBUG, string.format("rule key:%s, rule file name:%s", file, file_name))
---            rule_files[file] = file_name
---        end
---    end
---    return rule_files
---end
+
 
 -- WAF log record for json
 function _M.log_record(config_log_dir, attack_type, url, data, ruletag)
@@ -181,56 +154,29 @@ function _M.log_record(config_log_dir, attack_type, url, data, ruletag)
     }
 
     local log_line = cjson.encode(log_json_obj)
-    local log_name = string.format("%s/%s_waf.log", log_path, ngx.today())
     local score = _M.cacheInc()
 
 
-    local logerr = logutil.addlog2redis('ft_log_'..attack_type,score,log_line..'')
+    local logerr = redisop.zadd('ft_log_'..attack_type,score,log_line..'')
     if logerr then
         ngx.log(ngx.ERR,logerr)
     end
 
         --针对 CC攻击的IP 进行计数
     if attack_type == 'CC_Attack' then
-        logutil.CCattackInc('top_cc_attack',1,client_IP)
+        redisop.CCattackInc('top_cc_attack',1,client_IP)
     end
-
-
-    --如果为CC攻击 将用户 IP 自动 加入黑名单
-   -- if attack_type == 'CC_Attack' then
-    -- local reqtable = {}
-    --reqtable["type"] = "blackip.rule";
-    --reqtable["value"] = '{"RuleItem":"'..client_IP..'","Id":1,"RuleType":"blackip"}'
-    --local reqbody = cjson.encode(reqtable)
-    --ngx.log(ngx.ERR,'CCAttack IP into blackIP:'..reqbody)
-    --httpRds.addBlackIP(reqbody)
-    --end
-
---    local file, err = io.open(log_name, "a+")
---    if err ~= nil then ngx.log(ngx.DEBUG, "file err:" .. err) end
---    if file == nil then
---        return
---    end
---
---
---    file:write(string.format("%s\n", log_line))
---    file:flush()
---    file:close()
 end
+
 
 -- WAF response
 function _M.waf_output()
-    if config.config_waf_model == "redirect" then
-        ngx.redirect(config.config_waf_redirect_url, 301)
-    elseif config.config_waf_model == "jinghuashuiyue" then
-        local bad_guy_ip = _M.get_client_ip()
-        _M.set_bad_guys(bad_guy_ip, config.config_expire_time)
-    else
+
         ngx.header.content_type = "text/html"
         ngx.status = ngx.HTTP_FORBIDDEN
         ngx.say(string.format(config.config_output_html, _M.get_client_ip()))
         ngx.exit(ngx.status)
-    end
+
 end
 
 -- set bad guys ip to ngx.shared dict

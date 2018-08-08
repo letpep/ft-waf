@@ -12,7 +12,7 @@ local _M = {
 }
 
 
-function _M.addlog2redis(key,score,value)
+function _M.zadd(key,score,value)
     local red = redis.new()
     local res, err = red:exec(
         function(red)
@@ -49,6 +49,33 @@ function _M.rdsexpir(key,time)
         end
     )
     return err
+end
+function _M.zcount(key,start,endt)
+    local red = redis.new()
+    local res, err = red:exec(
+        function(red)
+            return red:zcount(key,start,endt)
+        end
+    )
+    if(err)then
+        return err
+    else
+        --        ngx.log(ngx.ERR,json.encode(res))
+        return(cjson.encode(res))
+    end
+end
+function _M.zrevrange(key,start,endt)
+    local red = redis.new()
+    local res, err = red:exec(
+        function(red)
+            return red:zrevrange(key,start,endt)
+        end
+    )
+    if(err)then
+        return err
+    else
+        return(cjson.encode(res))
+    end
 end
 
 return _M
