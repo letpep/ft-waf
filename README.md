@@ -77,11 +77,11 @@ nginx: configuration file /usr/local/openresty-1.11.2.5/nginx/conf/nginx.conf te
 
 
 ###规则更新：
-     提供了后台管理 界面 http://xxxxxxx:81
-     登录  admin  admin
-     Web防护 ---- 黑名单/白名单----- 规则重置 
-     将文件中的初始规则 写入 lua 缓存，同时在这个后台可以实时修改 添加  删除 规则
-    
+    <pre>
+     提供了后台管理 界面 http://xxxxxxx:81    登录  admin  admin
+     
+     Web防护 ---- 黑名单/白名单----- 规则重置       将文件中的初始规则 写入 lua 缓存，同时在这个后台可以实时修改 添加  删除 规则
+    </pre>
 
 ###一些说明：
 

@@ -125,7 +125,10 @@ function _M.cc_attack_check()
                  CCseconds = tonumber(string.match(rule, '/(.*)'))
             end
         end
-
+        --当次数为0时表示解除CC攻击
+        if CCcount~= nil and CCcount ==0 then
+            return false
+        end
         local ATTACK_URI = ngx.var.uri
         local CC_TOKEN = util.get_client_ip() .. ATTACK_URI
 

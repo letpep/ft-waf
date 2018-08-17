@@ -38,17 +38,17 @@ function _M.get_rule_files(rules_path)
     end
     return rule_files
 end
+
 -- if key exists
 function _M.rdskeyexists(key)
-   local res ,err =  redisop.zcount(key,0,100)
+    local res, err = redisop.zcount(key, 0, 100)
     if tonumber(res) > 0 then
         return true
     else
         return false
     end
-
-
 end
+
 --config from file to redis
 function _M.rules_to_redis(rules_path)
     local rule_files = _M.get_rule_files(rules_path)
@@ -64,8 +64,7 @@ function _M.rules_to_redis(rules_path)
         if table_rules ~= nil then
             for _, table_rule in pairs(table_rules) do
                 local score = _M.cacheInc()
-                redisop.zadd(rule_name,score,cjson.encode(table_rule))
-
+                redisop.zadd(rule_name, score, cjson.encode(table_rule))
             end
         end
     end
@@ -83,7 +82,7 @@ function _M.get_rules(rules_path)
     end
 
     for rule_name, rule_file in pairs(rule_files) do
-        local res ,err = redisop.zrevrange(rule_name,'0','-1')
+        local res, err = redisop.zrevrange(rule_name, '0', '-1')
         local json_rules = res.body
         local t_rule = {}
         local table_rules = cjson.decode(json_rules)
@@ -95,8 +94,8 @@ function _M.get_rules(rules_path)
         end
         local limit = ngx.shared.limit
         local dataj = cjson.encode(t_rule)
-        limit:set(rule_name,cjson.encode(t_rule))
-        ngx.log(ngx.ERR,rule_name..':----:'..limit:get(rule_name))
+        limit:set(rule_name, cjson.encode(t_rule))
+        ngx.log(ngx.ERR, rule_name .. ':----:' .. limit:get(rule_name))
         _M.RULE_TABLE[rule_name] = t_rule
     end
     return (_M.RULE_TABLE)
@@ -141,7 +140,7 @@ function _M.log_record(config_log_dir, attack_type, url, data, ruletag)
     local user_agent = _M.get_user_agent()
     local server_name = ngx.var.server_name
     local local_time = ngx.localtime()
-    local  logtime =  os.time()
+    local logtime = os.time()
     local log_json_obj = {
         client_ip = client_IP,
         local_time = local_time,
@@ -153,18 +152,18 @@ function _M.log_record(config_log_dir, attack_type, url, data, ruletag)
         rule_tag = ruletag,
     }
 
-    local log_line = cjson.encode(log_json_obj)
     local score = _M.cacheInc()
-
-
-    local logerr = redisop.zadd('ft_log_'..attack_type,score,log_line..'')
+    log_json_obj['score'] = score
+    log_json_obj['filename'] = 'ft_log_' .. attack_type
+    local log_line = cjson.encode(log_json_obj)
+    local logerr = _M.addlog2file();
     if logerr then
-        ngx.log(ngx.ERR,logerr)
+        ngx.log(ngx.ERR, logerr)
     end
 
-        --针对 CC攻击的IP 进行计数
+    --针对 CC攻击的IP 进行计数
     if attack_type == 'CC_Attack' then
-        redisop.CCattackInc('top_cc_attack',1,client_IP)
+        redisop.CCattackInc('top_cc_attack', 1, client_IP)
     end
 end
 
@@ -172,11 +171,10 @@ end
 -- WAF response
 function _M.waf_output()
 
-        ngx.header.content_type = "text/html"
-        ngx.status = ngx.HTTP_FORBIDDEN
-        ngx.say(string.format(config.config_output_html, _M.get_client_ip()))
-        ngx.exit(ngx.status)
-
+    ngx.header.content_type = "text/html"
+    ngx.status = ngx.HTTP_FORBIDDEN
+    ngx.say(string.format(config.config_output_html, _M.get_client_ip()))
+    ngx.exit(ngx.status)
 end
 
 -- set bad guys ip to ngx.shared dict
@@ -189,22 +187,35 @@ function _M.set_bad_guys(bad_guy_ip, expire_time)
         badGuys:set(bad_guy_ip, 1, expire_time)
     end
 end
+
 -- nginx cache 计数器
 function _M.cacheInc()
     local limitinc = ngx.shared.limit
     local incData = limitinc:get("ft_inc")
-    if(incData==nil or tonumber(incData)<100) then
+    if (incData == nil or tonumber(incData) < 100) then
         local time = os.time()
-        limitinc:set("ft_inc",time-1533016650)
-       local res ,err  = limitinc:incr("ft_inc",1)
-        return  res
+        limitinc:set("ft_inc", time - 1533016650)
+        local res, err = limitinc:incr("ft_inc", 1)
+        return res
     end
-    local res ,err = limitinc:incr("ft_inc",1)
+    local res, err = limitinc:incr("ft_inc", 1)
     return res
-
 end
+
 function _M.cjson_decode(str)
     return cjson.decode(str)
+end
+
+function _M.addlog2file(value)
+    local LOG_LINE = value
+    local LOG_NAME = "/usr/local/openresty/nginx/logs/ft_waf.log"
+    local file = io.open(LOG_NAME, "a")
+    if file == nil then
+        return
+    end
+    file:write(LOG_LINE .. "\n")
+    file:flush()
+    file:close()
 end
 
 
